@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chladni Plate Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: sans-serif;
+      background: #f4f3ee;
+      color: #1a1a18;
+      display: flex;
+      justify-content: center;
+      padding: 40px 16px;
+      min-height: 100vh;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid #ddd;
+      border-radius: 14px;
+      padding: 28px 28px 24px;
+      width: 100%;
+      max-width: 620px;
+    }
+    h1 { font-size: 18px; font-weight: 500; margin-bottom: 4px; color: #1a1a18; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+    .ctrl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13px; color: #555; }
+    .ctrl-row label { min-width: 80px; }
+    .ctrl-row input[type=range] { flex: 1; accent-color: #444; }
+    .ctrl-row .val { min-width: 24px; font-weight: 500; font-size: 13px; color: #1a1a18; text-align: right; }
+    .freq-row { margin: 16px 0 18px; font-size: 13px; color: #555; }
+    .freq-badge { display: inline-block; background: #f4f3ee; border: 1px solid #ddd; border-radius: 6px; padding: 4px 12px; font-size: 13px; font-weight: 500; color: #1a1a18; margin-left: 6px; }
+    canvas { display: block; width: 100%; border-radius: 10px; border: 1px solid #ddd; }
+    .tags { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    .tag { background: #f4f3ee; border-radius: 4px; padding: 3px 10px; font-size: 12px; color: #666; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #111110; }
+      .card { background: #1c1c1a; border-color: #333; }
+      h1 { color: #e8e5da; }
+      .subtitle { color: #666; }
+      .ctrl-row { color: #aaa; }
+      .ctrl-row .val { color: #e8e5da; }
+      .ctrl-row input[type=range] { accent-color: #aaa; }
+      .freq-row { color: #aaa; }
+      .freq-badge { background: #252523; border-color: #444; color: #e8e5da; }
+      canvas { border-color: #333; }
+      .tag { background: #252523; color: #888; }
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Chladni Plate Simulator</h1>
+  <p class="subtitle">12" × 12" × 1/32" aluminium plate — Al 6061</p>
+  <div class="ctrl-row">
+    <label>Mode m</label>
+    <input type="range" id="slM" min="1" max="9" value="2" step="1">
+    <span class="val" id="valM">2</span>
+  </div>
+  <div class="ctrl-row">
+    <label>Mode n</label>
+    <input type="range" id="slN" min="1" max="9" value="3" step="1">
+    <span class="val" id="valN">3</span>
+  </div>
+  <div class="ctrl-row">
+    <label>Grain size</label>
+    <input type="range" id="slGrain" min="1" max="6" value="3" step="1">
+    <span class="val" id="valGrain">3</span>
+  </div>
+  <div class="freq-row">
+    Predicted resonant frequency:
+    <span class="freq-badge" id="freqBadge">—</span>
+  </div>
+  <canvas id="c" height="400"></canvas>
+  <div class="tags">
+    <span class="tag" id="modeLabel">mode (2, 3)</span>
+    <span class="tag">simply-supported boundary</span>
+    <span class="tag">E = 69 GPa | ρ = 2700 kg/m³ | ν = 0.33</span>
+  </div>
+</div>
+<script>
+  const L   = 12 * 0.0254;
+  const h   = (1 / 32) * 0.0254;
+  const E   = 69e9;
+  const nu  = 0.33;
+  const rho = 2700;
+  const D   = E * Math.pow(h, 3) / (12 * (1 - nu * nu));
+  const K   = (Math.PI / (2 * L * L)) * Math.sqrt(D / (rho * h));
+
+  function resonantFrequency(m, n) {
+    return K * (m * m + n * n);
+  }
+
+  const canvas = document.getElementById('c');
+  const ctx    = canvas.getContext('2d');
+
+  function resizeCanvas() {
+    canvas.width  = canvas.clientWidth;
+    canvas.height = 400;
+  }
+  resizeCanvas();
+  window.addEventListener('resize', () => { resizeCanvas(); draw(); });
+
+  function isDark() {
+    return matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+
+  function draw() {
+    const m         = parseInt(document.getElementById('slM').value);
+    const n         = parseInt(document.getElementById('slN').value);
+    const grainSize = parseInt(document.getElementById('slGrain').value);
+    const W = canvas.width;
+    const H = canvas.height;
+    const dark = isDark();
+
+    ctx.fillStyle = dark ? '#1c1c1a' : '#f8f7f2';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, W, H, 10);
+    ctx.fill();
+
+    ctx.strokeStyle = dark ? '#444' : '#ccc';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.roundRect(2, 2, W - 4, H - 4, 9);
+    ctx.stroke();
+
+    const GRID      = 420;
+    const THRESHOLD = 0.018;
+
+    ctx.fillStyle = dark ? '#e2dfd4' : '#2c2c28';
+
+    for (let i = 0; i < GRID; i++) {
+      for (let j = 0; j < GRID; j++) {
+        const x = (i + 0.5) / GRID;
+        const y = (j + 0.5) / GRID;
+
+        const w    = Math.sin(m * Math.PI * x) * Math.sin(n * Math.PI * y);
+        const dWdx = m * Math.PI * Math.cos(m * Math.PI * x) * Math.sin(n * Math.PI * y);
+        const dWdy = n * Math.PI * Math.sin(m * Math.PI * x) * Math.cos(n * Math.PI * y);
+        const gradMag = Math.sqrt(dWdx * dWdx + dWdy * dWdy) + 1e-9;
+
+        if (Math.abs(w) / gradMag < THRESHOLD) {
+          const px = x * W;
+          const py = y * H;
+          const r  = grainSize * 0.7 * (0.6 + Math.random() * 0.8);
+          ctx.beginPath();
+          ctx.arc(px + (Math.random() - 0.5) * 3, py + (Math.random() - 0.5) * 3, r, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+    }
+
+    const freq = resonantFrequency(m, n);
+    document.getElementById('freqBadge').textContent = freq < 1000
+      ? freq.toFixed(1) + ' Hz'
+      : (freq / 1000).toFixed(2) + ' kHz';
+    document.getElementById('modeLabel').textContent = 'mode (' + m + ', ' + n + ')';
+  }
+
+  function onSliderChange(sliderId, displayId) {
+    document.getElementById(displayId).textContent = document.getElementById(sliderId).value;
+    draw();
+  }
+
+  document.getElementById('slM').oninput     = () => onSliderChange('slM',     'valM');
+  document.getElementById('slN').oninput     = () => onSliderChange('slN',     'valN');
+  document.getElementById('slGrain').oninput = () => onSliderChange('slGrain', 'valGrain');
+
+  draw();
+</script>
+</body>
+</html>
